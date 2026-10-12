@@ -1,44 +1,72 @@
-// eval.js starter. Fill in the four TODOs, then run: node eval.js
-// You should not need any libraries. Plain Node.js is enough.
-const fs = require('fs');
+```javascript
+const fs = require("fs");
+const path = require("path");
 
-// --- 1. Load the inputs (already done for you) -----------------------------
-// test-set.csv has a header row, then: query,correct_post_ids
-// correct_post_ids may be a semicolon list, e.g. "1024;1025".
-function loadTestSet(path) {
-  const lines = fs.readFileSync(path, 'utf8').trim().split('\n').slice(1);
-  return lines.map(line => {
-    const [query, ids] = line.split(',');
-    return { query, correctIds: ids.split(';').map(Number) };
-  });
-}
-const testSet = loadTestSet('test-set.csv');
+const testSet = fs.readFileSync(
+  path.join(__dirname, "test-set.csv"),
+  "utf8"
+).trim().split(/\r?\n/).slice(1).map(line => {
+  const [query, correctIds] = line.split(/,(.*)/s);
+  return {
+    query: query.replace(/^"|"$/g, ""),
+    correct_post_ids: correctIds.split(";").map(Number)
+  };
+});
 
-// search-results.json maps each query to the top-10 ranked post_id lists that
-// each system returned: { "<query>": { keyword: [...], semantic: [...] } }
-const results = JSON.parse(fs.readFileSync('search-results.json', 'utf8'));
+const searchResults = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "search-results.json"), "utf8")
+);
 
-// --- 2. TODO: Reciprocal Rank ----------------------------------------------
-// Return 1 / (rank of the FIRST correct id in rankedIds). Return 0 if none of
-// the correct ids appear in rankedIds. Rank is 1-based (first result = rank 1).
-function reciprocalRank(rankedIds, correctIds) {
-  // TODO: implement
-}
-
-// Helper: the 1-based rank of the first correct id, or null if it is a miss.
-function rankOf(rankedIds, correctIds) {
-  // TODO: implement (used only to print the comparison table)
+function reciprocalRank(results, correctIds) {
+  for (let i = 0; i < results.length; i++) {
+    if (correctIds.includes(Number(results[i].post_id ?? results[i]))) {
+      return 1 / (i + 1);
+    }
+  }
+  return 0;
 }
 
-// --- 3. TODO: run the evaluation loop --------------------------------------
-// For every query: look up its keyword and semantic ranked lists, compute the
-// reciprocal rank of each, accumulate the RRs, and count a "hit" whenever the
-// correct answer was found in the top 10 (RR > 0).
-// Then compute:
-//   keywordMRR, semanticMRR         = average RR across all queries
-//   keywordRecall, semanticRecall   = hits / number of queries
+function findRank(results, correctIds) {
+  for (let i = 0; i < results.length; i++) {
+    if (correctIds.includes(Number(results[i].post_id ?? results[i]))) {
+      return i + 1;
+    }
+  }
+  return "miss";
+}
 
-// --- 4. TODO: print a markdown comparison table ----------------------------
-// Print one row per query: | query | keyword rank | semantic rank |  (use "miss"
-// when the answer was not in the top 10), then a final **Summary** row with
-// MRR and Recall@10 for each system, each rounded to 2 decimals.
+const keywordRRs = [];
+const semanticRRs = [];
+let keywordHits = 0;
+let semanticHits = 0;
+
+console.log("| Query | Keyword rank | Semantic rank |");
+console.log("|---|---:|---:|");
+
+for (const item of testSet) {
+  const result = searchResults[item.query];
+
+  const keyword = result.keyword;
+  const semantic = result.semantic;
+
+  const kRR = reciprocalRank(keyword, item.correct_post_ids);
+  const sRR = reciprocalRank(semantic, item.correct_post_ids);
+
+  keywordRRs.push(kRR);
+  semanticRRs.push(sRR);
+
+  if (kRR > 0) keywordHits++;
+  if (sRR > 0) semanticHits++;
+
+  console.log(
+    `| ${item.query} | ${findRank(keyword, item.correct_post_ids)} | ${findRank(semantic, item.correct_post_ids)} |`
+  );
+}
+
+const mean = values =>
+  values.reduce((sum, value) => sum + value, 0) / values.length;
+
+console.log(
+  `| **Summary** | **MRR ${mean(keywordRRs).toFixed(2)} · Recall@10 ${(keywordHits / testSet.length).toFixed(2)}** | **MRR ${mean(semanticRRs).toFixed(2)} · Recall@10 ${(semanticHits / testSet.length).toFixed(2)}** |`
+);
+```
